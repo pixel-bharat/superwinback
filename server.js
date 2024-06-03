@@ -1,13 +1,14 @@
-const express = require('express');
-const mongoose = require('mongoose');
-const bodyParser = require('body-parser');
-const otpGenerator = require('otp-generator');
-const twilio = require('twilio');
-const { v4: uuidv4 } = require('uuid');
-const jwt = require('jsonwebtoken');
-const validator = require('validator');
-require('dotenv').config();
-const cors = require('cors');
+const express = require("express");
+const mongoose = require("mongoose");
+const bodyParser = require("body-parser");
+const otpGenerator = require("otp-generator");
+const twilio = require("twilio");
+const { v4: uuidv4 } = require("uuid");
+const jwt = require("jsonwebtoken");
+const validator = require("validator");
+
+require("dotenv").config();
+const cors = require("cors");
 
 const app = express();
 app.use(express.json());
@@ -17,9 +18,9 @@ app.use(cors());
 // MongoDB connection
 mongoose
   .connect(process.env.MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
+  .then(() => console.log("Connected to MongoDB"))
   .catch((err) => {
-    console.error('MongoDB connection error:', err);
+    console.error("MongoDB connection error:", err);
     process.exit(1);
   });
 
@@ -42,21 +43,21 @@ const userSchema = new mongoose.Schema({
   uniqueId: String,
   walletBalance: { type: Number, default: 0 },
 });
-const User = mongoose.model('User', userSchema);
+const User = mongoose.model("User", userSchema);
 
 const generateUniqueId = () => {
-  return 'uuidv4' + Math.floor(Math.random() * 100000);
+  return "uuidv4" + Math.floor(Math.random() * 100000);
 };
 
 const userSessions = {}; // Global or appropriate scoped session storage
 
-app.post('/send-otp', async (req, res) => {
+app.post("/send-otp", async (req, res) => {
   const { phoneNumber } = req.body;
   if (!phoneNumber) {
-    return res.status(400).send('Phone number is required');
+    return res.status(400).send("Phone number is required");
   }
 
-  const cleanedPhoneNumber = phoneNumber.replace(/\D/g, '');
+  const cleanedPhoneNumber = phoneNumber.replace(/\D/g, "");
   const otp = otpGenerator.generate(4, {
     digits: true,
     upperCase: false,
@@ -75,7 +76,9 @@ app.post('/send-otp', async (req, res) => {
       user.uniqueId = uid;
       console.log(`Generated UID for ${cleanedPhoneNumber}: ${uid}`);
     } else {
-      console.log(`User found. Phone number: ${user.phoneNumber}, UID: ${user.uniqueId}`);
+      console.log(
+        `User found. Phone number: ${user.phoneNumber}, UID: ${user.uniqueId}`
+      );
     }
 
     // Store OTP, phone number, and unique ID in local session using cleanedPhoneNumber as the key
@@ -84,7 +87,10 @@ app.post('/send-otp', async (req, res) => {
       phoneNumber: cleanedPhoneNumber,
       uid: user.uniqueId,
     };
-    console.log(`Stored session data for ${cleanedPhoneNumber}: `, userSessions[cleanedPhoneNumber]);
+    console.log(
+      `Stored session data for ${cleanedPhoneNumber}: `,
+      userSessions[cleanedPhoneNumber]
+    );
 
     await client.messages.create({
       body: `Your OTP code is ${otp}`,
@@ -93,34 +99,40 @@ app.post('/send-otp', async (req, res) => {
     });
 
     console.log(`OTP sent to ${phoneNumber}: ${otp}`);
-    res.status(200).send('OTP sent successfully');
+    res.status(200).send("OTP sent successfully");
   } catch (error) {
     console.error(`Error sending OTP to ${phoneNumber}: `, error);
-    res.status(500).send('Error sending OTP');
+    res.status(500).send("Error sending OTP");
   }
 });
 
-app.post('/verify-otp', async (req, res) => {
+app.post("/verify-otp", async (req, res) => {
   const { phoneNumber, otp } = req.body;
   if (!phoneNumber || !otp) {
-    return res.status(400).send('Phone number and OTP are required');
+    return res.status(400).send("Phone number and OTP are required");
   }
 
-  const cleanedPhoneNumber = phoneNumber.replace(/\D/g, '');
-  console.log(`Verifying OTP for phone number: ${cleanedPhoneNumber}, OTP: ${otp}`);
+  const cleanedPhoneNumber = phoneNumber.replace(/\D/g, "");
+  console.log(
+    `Verifying OTP for phone number: ${cleanedPhoneNumber}, OTP: ${otp}`
+  );
 
   try {
     const sessionData = userSessions[cleanedPhoneNumber];
     console.log(`Session data for ${cleanedPhoneNumber}: `, sessionData);
 
     if (!sessionData) {
-      console.log(`No session data found for phone number: ${cleanedPhoneNumber}`);
-      return res.status(400).send('Invalid phone number or OTP');
+      console.log(
+        `No session data found for phone number: ${cleanedPhoneNumber}`
+      );
+      return res.status(400).send("Invalid phone number or OTP");
     }
 
     if (sessionData.otp !== otp) {
-      console.log(`Invalid OTP for phone number: ${cleanedPhoneNumber}. Expected: ${sessionData.otp}, Received: ${otp}`);
-      return res.status(400).send('Invalid OTP');
+      console.log(
+        `Invalid OTP for phone number: ${cleanedPhoneNumber}. Expected: ${sessionData.otp}, Received: ${otp}`
+      );
+      return res.status(400).send("Invalid OTP");
     }
 
     let user = await User.findOne({ phoneNumber: cleanedPhoneNumber });
@@ -131,9 +143,13 @@ app.post('/verify-otp', async (req, res) => {
         uniqueId: sessionData.uid,
       });
       await user.save();
-      console.log(`New user registered. Phone number: ${cleanedPhoneNumber}, UID: ${sessionData.uid}`);
+      console.log(
+        `New user registered. Phone number: ${cleanedPhoneNumber}, UID: ${sessionData.uid}`
+      );
     } else {
-      console.log(`Existing user verified. Phone number: ${user.phoneNumber}, UID: ${user.uniqueId}`);
+      console.log(
+        `Existing user verified. Phone number: ${user.phoneNumber}, UID: ${user.uniqueId}`
+      );
     }
 
     // OTP verification successful, cleanup session data
@@ -153,12 +169,14 @@ app.post('/verify-otp', async (req, res) => {
         profileSetupRequired,
       },
       process.env.JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: "1h" }
     );
 
-    console.log(`OTP verified successfully for phone number: ${cleanedPhoneNumber}`);
+    console.log(
+      `OTP verified successfully for phone number: ${cleanedPhoneNumber}`
+    );
     res.status(200).send({
-      message: 'OTP verified successfully',
+      message: "OTP verified successfully",
       uid: user.uniqueId,
       token,
       profileSetupRequired,
@@ -167,25 +185,28 @@ app.post('/verify-otp', async (req, res) => {
       walletBalance: user.walletBalance,
     });
   } catch (error) {
-    console.error(`Error verifying OTP for phone number: ${cleanedPhoneNumber}: `, error);
-    res.status(500).send('Error verifying OTP');
+    console.error(
+      `Error verifying OTP for phone number: ${cleanedPhoneNumber}: `,
+      error
+    );
+    res.status(500).send("Error verifying OTP");
   }
 });
 
 // POST endpoint to update user profile avatar and name
 function validateAvatar(avatar) {
   const allowedAvatars = [
-    'avatar_1',
-    'avatar_2',
-    'avatar_3',
-    'avatar_4',
-    'avatar_5',
-    'upload_avatar',
+    "avatar_1",
+    "avatar_2",
+    "avatar_3",
+    "avatar_4",
+    "avatar_5",
+    "upload_avatar",
   ];
 
   if (
     validator.isURL(avatar, {
-      protocols: ['http', 'https'],
+      protocols: ["http", "https"],
       require_protocol: true,
     })
   ) {
@@ -196,20 +217,24 @@ function validateAvatar(avatar) {
     return true;
   }
 
-  throw new Error('Invalid avatar provided. Must be a valid URL or a recognized filename.');
+  throw new Error(
+    "Invalid avatar provided. Must be a valid URL or a recognized filename."
+  );
 }
 
-app.post('/avatar', async (req, res) => {
+app.post("/avatar", async (req, res) => {
   const { uid, memberName, avatar, phoneNumber } = req.body;
 
   if (!uid || !phoneNumber) {
-    return res.status(400).json({ message: 'User ID and phone number are required' });
+    return res
+      .status(400)
+      .json({ message: "User ID and phone number are required" });
   }
 
   try {
     const user = await User.findOne({ uniqueId: uid });
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: "User not found" });
     }
 
     if (memberName && memberName.trim()) {
@@ -219,7 +244,7 @@ app.post('/avatar', async (req, res) => {
 
     if (avatar) {
       if (!validateAvatar(avatar)) {
-        return res.status(400).json({ message: 'Invalid avatar reference' });
+        return res.status(400).json({ message: "Invalid avatar reference" });
       }
       user.avatar = avatar;
       user.isAvatarSet = true;
@@ -236,13 +261,13 @@ app.post('/avatar', async (req, res) => {
         profileSetupRequired,
       },
       process.env.JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: "1h" }
     );
 
     await user.save();
 
     res.status(200).json({
-      message: 'Profile update successful',
+      message: "Profile update successful",
       profile: {
         phoneNumber: user.phoneNumber,
         name: user.name,
@@ -253,14 +278,10 @@ app.post('/avatar', async (req, res) => {
       token,
     });
   } catch (error) {
-    console.error('Error updating profile:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error("Error updating profile:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 });
-
-
-
-
 
 //
 //
@@ -300,104 +321,101 @@ const Transaction = mongoose.model("Transaction", transactionSchema);
 //
 //// Middleware to verify token
 
-app.post('/api/add_money', authenticateToken, async (req, res) => {
+app.post("/api/add_money", authenticateToken, async (req, res) => {
   const { amount } = req.body;
   const numericAmount = parseFloat(amount);
-  console.log('Add money request for amount:', numericAmount);
+  console.log("Add money request for amount:", numericAmount);
   if (isNaN(numericAmount) || numericAmount <= 0) {
-    console.log('Invalid amount:', numericAmount);
-    return res.status(400).json({ message: 'Invalid amount' });
+    console.log("Invalid amount:", numericAmount);
+    return res.status(400).json({ message: "Invalid amount" });
   }
   try {
     const user = await User.findOne({ uniqueId: req.user.userId });
     if (!user) {
-      console.log('User not found with uniqueId:', req.user.userId);
-      return res.status(404).json({ message: 'User not found' });
+      console.log("User not found with uniqueId:", req.user.userId);
+      return res.status(404).json({ message: "User not found" });
     }
     user.walletBalance += numericAmount;
     await user.save();
-    console.log('Wallet balance updated for user:', req.user.userId);
+    console.log("Wallet balance updated for user:", req.user.userId);
 
     const transaction = new Transaction({
       uniqueId: user.uniqueId,
       userId: user._id,
       amount: numericAmount,
-      transactionType: 'credit',
-      description: 'Add money to wallet',
+      transactionType: "credit",
+      description: "Add money to wallet",
     });
     await transaction.save();
-    console.log('Transaction saved for user:', req.user.userId);
+    console.log("Transaction saved for user:", req.user.userId);
 
     res.json({
-      message: 'Money added successfully',
+      message: "Money added successfully",
       walletBalance: user.walletBalance,
     });
   } catch (error) {
-    console.error('Error adding money:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error adding money:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
-
 
 //
 //
 //Spend money API here
-app.post('/api/spend', authenticateToken, async (req, res) => {
+app.post("/api/spend", authenticateToken, async (req, res) => {
   const { amount } = req.body;
-  console.log('Spend money request:', amount);
+  console.log("Spend money request:", amount);
   try {
     const user = await User.findOne({ uniqueId: req.user.userId });
     if (!user) {
-      console.log('User not found with uniqueId:', req.user.userId);
-      return res.status(404).json({ message: 'User not found' });
+      console.log("User not found with uniqueId:", req.user.userId);
+      return res.status(404).json({ message: "User not found" });
     }
     if (user.walletBalance < amount) {
-      console.log('Insufficient balance for user:', req.user.userId);
-      return res.status(400).json({ message: 'Insufficient balance' });
+      console.log("Insufficient balance for user:", req.user.userId);
+      return res.status(400).json({ message: "Insufficient balance" });
     }
     user.walletBalance -= amount;
     await user.save();
-    console.log('Balance updated after spending for user:', req.user.userId);
+    console.log("Balance updated after spending for user:", req.user.userId);
 
     const transaction = new Transaction({
       uniqueId: user.uniqueId,
       userId: user._id,
       amount,
-      transactionType: 'debit',
-      description: 'Spent from wallet',
+      transactionType: "debit",
+      description: "Spent from wallet",
     });
     await transaction.save();
-    console.log('Debit transaction recorded for user:', req.user.userId);
+    console.log("Debit transaction recorded for user:", req.user.userId);
 
     res.json({
-      message: 'Amount spent successfully',
+      message: "Amount spent successfully",
       newBalance: user.walletBalance,
     });
   } catch (error) {
-    console.error('Spend money error:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Spend money error:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
-
 
 //
 //
 //Transaction History Endpoint
 
-app.get('/api/transactions', authenticateToken, async (req, res) => {
+app.get("/api/transactions", authenticateToken, async (req, res) => {
   try {
-    console.log('Fetching transactions for user:', req.user.userId);
+    console.log("Fetching transactions for user:", req.user.userId);
     const transactions = await Transaction.find({
       uniqueId: req.user.userId,
     }).sort({ transactionDate: -1 });
-    console.log('Transactions retrieved:', transactions.length);
+    console.log("Transactions retrieved:", transactions.length);
     res.json(transactions);
   } catch (error) {
-    console.error('Error fetching transactions:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error fetching transactions:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
-
 
 // User Data Endpoint
 app.get("/api/userdata", authenticateToken, async (req, res) => {
@@ -425,12 +443,70 @@ app.get("/api/userdata", authenticateToken, async (req, res) => {
 });
 // User Data Endpoint
 
+const roomSchema = new mongoose.Schema({
+  uid: { type: String, required: true },
+  roomID: { type: String, required: true, unique: true },
+  roomType: { type: String, required: true },
+  roomName: { type: String, required: true },
+});
+
+const Room = mongoose.model("Room", roomSchema);
+
+// Create Room Endpoint
+// Create Room Endpoint
+// Route to create a room
+app.post("/create-room", async (req, res) => {
+  const { roomID, roomName, roomType, uid } = req.body;
+  console.log(req.body);
+
+  try {
+    // Check if the roomID already exists
+    const existingRoom = await Room.findOne({ roomID });
+    if (existingRoom) {
+      return res.status(400).json({ message: "Room ID already exists" });
+    }
+
+    // Create a new room
+    const newRoom = new Room({
+      roomID,
+      roomName,
+      roomType,
+      uid,
+    });
 
 
+    await newRoom.save();
+ 
+    res.json({ message: "Room created successfully", room: newRoom });
+  } catch (error) {
+    console.error("Error creating room:", error);
+    res.status(500).json({ message: "Failed to create room" });
+  }
+});
 
 
+app.post('/join-room', (req, res) => {
+  // Extract the room ID from the request body
+  const { roomID } = req.body;
 
+  // Perform actions to join the room
+  // This could include database operations, validation, etc.
 
+  // For example, you might send a success response back
+  res.status(200).json({ message: 'Successfully joined the room', roomID });
+});
+
+// Fetch Recent Rooms Endpoint
+// app.get('/recent-rooms', authenticateToken, async (req, res) => {
+//   const limit = parseInt(req.query.limit, 10) || 10;
+
+//   try {
+//     const recentRooms = await Room.find().sort({ createdAt: -1 }).limit(limit);
+//     res.json(recentRooms);
+//   } catch (error) {
+//     res.status(500).json({ message: 'Server error' });
+//   }
+// });
 
 app.listen(process.env.PORT, () => {
   console.log(`Server is running on port ${process.env.PORT}`);
