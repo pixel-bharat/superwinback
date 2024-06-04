@@ -485,28 +485,45 @@ app.post("/create-room", async (req, res) => {
 });
 
 
-app.post('/join-room', (req, res) => {
+app.post('/join-room', async (req, res) => {
   // Extract the room ID from the request body
   const { roomID } = req.body;
 
-  // Perform actions to join the room
-  // This could include database operations, validation, etc.
+  try {
+    // Find the room by ID
+    const room = await Room.findOne({ roomID });
 
-  // For example, you might send a success response back
-  res.status(200).json({ message: 'Successfully joined the room', roomID });
+    // If the room doesn't exist, return an error
+    if (!room) {
+      return res.status(404).json({ message: "Room not found" });
+    }
+
+    // Update the role of the user who joins the room to "user"
+    room.role = "user";
+    await room.save();
+
+    res.status(200).json({ message: 'Successfully joined the room', roomID });
+  } catch (error) {
+    console.error("Error joining room:", error);
+    res.status(500).json({ message: "Failed to join room" });
+  }
 });
 
-// Fetch Recent Rooms Endpoint
-// app.get('/recent-rooms', authenticateToken, async (req, res) => {
-//   const limit = parseInt(req.query.limit, 10) || 10;
 
-//   try {
-//     const recentRooms = await Room.find().sort({ createdAt: -1 }).limit(limit);
-//     res.json(recentRooms);
-//   } catch (error) {
-//     res.status(500).json({ message: 'Server error' });
-//   }
-// });
+// Fetch Recent Rooms Endpoint
+app.get("/recent-rooms", async (req, res) => {
+  const limit = parseInt(req.query.limit, 10) || 10; // Default limit is 10
+
+  try {
+    // Fetch recent rooms from the database
+    const recentRooms = await Room.find().sort({ createdAt: -1 }).limit(limit);
+    res.json(recentRooms);
+  } catch (error) {
+    console.error("Error fetching recent rooms:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 
 app.listen(process.env.PORT, () => {
   console.log(`Server is running on port ${process.env.PORT}`);
