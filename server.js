@@ -519,7 +519,7 @@ app.post('/join-room', async (req, res) => {
 
 // Fetch Recent Rooms Endpoint
 app.get('/recent-rooms', async (req, res) => {
-  const limit = parseInt(req.query.limit, 10) || 2; // Default limit is 5
+  const limit = parseInt(req.query.limit, 10) || 10; // Default limit is 5
 
   try {
     const recentRooms = await Room.find().sort({ createdAt: -1 }).limit(limit);
