@@ -518,15 +518,19 @@ app.post('/join-room', async (req, res) => {
 
 
 // Fetch Recent Rooms Endpoint
-app.get('/recent-rooms', async (req, res) => {
-  const limit = parseInt(req.query.limit, 10) || 10; // Default limit is 5
-
-  try {
-    const recentRooms = await Room.find().sort({ createdAt: -1 }).limit(limit);
+app.get("/recent-rooms", authenticateToken, async (req, res) => {
+// const limit = parseInt(req.query.limit, 10) || 2; // Default limit is 5
+    try {
+    const user = await User.findOne({ uniqueId: req.user.userId });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    // Fetch rooms created by the user
+    const recentRooms = await Room.find({ uid: user.uniqueId }).sort({ createdAt: -1 });
     res.json(recentRooms);
   } catch (error) {
-    console.error('Error fetching recent rooms:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error fetching recent rooms:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
