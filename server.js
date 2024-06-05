@@ -496,7 +496,8 @@ app.post("/create-room", async (req, res) => {
 
 app.post('/join-room', async (req, res) => {
   try {
-    const { uid, roomID } = req.body;
+    const { uid } = req.user.userId;
+    const { roomID } = req.body;
     const existingRoom = await Room.findOne({ roomID });
     if (!existingRoom) {
       return res.status(400).json({ message: "Room ID not found" });
