@@ -442,9 +442,8 @@ app.get("/api/userdata", authenticateToken, async (req, res) => {
   }
 });
 // User Data Endpoint
-
 const roomSchema = new mongoose.Schema({
-  uid: { type: String, required: true },
+  uid: { type: String, required: true, unique: true },
   roomID: { type: String, required: true, unique: true },
   roomType: { type: String, required: true },
   roomName: { type: String, required: true },
@@ -453,27 +452,24 @@ const roomSchema = new mongoose.Schema({
   roles: { type: [String], required: true }, // Roles as an array of strings
 });
 
-const Room = mongoose.model('Room', roomSchema);
-
-
+const Room = mongoose.model("Room", roomSchema);
 
 // Create Room Endpoint
 // Create Room Endpoint
 // Route to create a room
 app.post("/create-room", async (req, res) => {
-  const { roomID, roomName, roomType, uid ,members,roles} = req.body;
+  const { roomID, roomName, roomType, uid, roles } = req.body;
 
   try {
     // Check if the roomID already exists
-
-    const roles = [`${uid}:admin`];
-    const members = [`${roomType}`];
-
-
     const existingRoom = await Room.findOne({ roomID });
     if (existingRoom) {
       return res.status(400).json({ message: "Room ID already exists" });
     }
+
+    // Extract the total number of members from roomType and format members as "1/totalMembers"
+    const totalMembers = parseInt(roomType.split("_")[0]);
+    const members = [`${1}/${totalMembers}`];
 
     // Create a new room
     const newRoom = new Room({
@@ -482,11 +478,11 @@ app.post("/create-room", async (req, res) => {
       roomType,
       roomName,
       members,
-      roles,// Assigning the role of "admin" to the user who creates the room
+      roles: [`${uid}:admin`], // Assigning the role of "admin" to the user who creates the room
     });
 
     await newRoom.save();
- 
+
     res.json({ message: "Room created successfully", room: newRoom });
   } catch (error) {
     console.error("Error creating room:", error);
@@ -494,23 +490,49 @@ app.post("/create-room", async (req, res) => {
   }
 });
 
-app.post('/join-room', async (req, res) => {
+const joinedUserSchema = new mongoose.Schema({
+  uid: String,
+  rid: mongoose.Schema.Types.ObjectId, // Assuming rid is the ObjectId of the room
+  joinedAt: { type: Date, default: Date.now },
+});
+
+const JoinedUser = mongoose.model("JoinedUser", joinedUserSchema);
+
+app.post("/join-room", authenticateToken, async (req, res) => {
   try {
-    const { uid } = req.user.userId;
     const { roomID } = req.body;
+    const uid = req.user.userId;
+    console.log(roomID);
+    console.log(uid);
     const existingRoom = await Room.findOne({ roomID });
+    
     if (!existingRoom) {
       return res.status(400).json({ message: "Room ID not found" });
     }
+  
 
-    // Assign the user to the room
-    existingRoom.members.push(`${uid}`);
-
-    // Update the role of the user who joined the room
+    let [currentMembers, totalMembers] =  existingRoom .members[0].split("/").map(Number);
+    if ( existingRoom.members.includes(uid)) {
+      return res.status(400).json({ message: "User is already a member of the room" });
+    }
+    currentMembers += 1;
+   existingRoom.members[0] = `${currentMembers}/${totalMembers}`;
+  
     existingRoom.roles.push(`${uid}:member`);
+ 
 
     await existingRoom.save();
-    res.json({ message: "Joined room successfully" });
+
+    await User.updateOne(
+      { uid },
+      {
+        $addToSet: { rooms: roomID }
+      }
+    );
+
+
+   
+    res.json({ message: "Joined room successfully", existingRoom }); // Send the room object along with the message
   } catch (error) {
     console.error("Error joining room:", error);
     res.status(500).json({ message: "Failed to join room" });
