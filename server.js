@@ -442,19 +442,20 @@ app.get("/api/userdata", authenticateToken, async (req, res) => {
   }
 });
 // User Data Endpoint
+
 const roomSchema = new mongoose.Schema({
-  uid: { type: String, required: true, unique: true },
   roomID: { type: String, required: true, unique: true },
+  uid: { type: String, required: true},
   roomType: { type: String, required: true },
   roomName: { type: String, required: true },
   createdAt: { type: Date, default: Date.now },
-  members: { type: [String], required: true }, // Members as an array of strings
-  roles: { type: [String], required: true }, // Roles as an array of strings
+  membercount: { type: String, required: true }, // Members as an array of strings
+  members: { type: [String], required: true }, // Roles as an array of strings
 });
 
 const Room = mongoose.model("Room", roomSchema);
 
-// Create Room Endpoint
+
 // Create Room Endpoint
 // Route to create a room
 app.post("/create-room", async (req, res) => {
@@ -469,7 +470,7 @@ app.post("/create-room", async (req, res) => {
 
     // Extract the total number of members from roomType and format members as "1/totalMembers"
     const totalMembers = parseInt(roomType.split("_")[0]);
-    const members = [`${1}/${totalMembers}`];
+    const membercount = `${1}/${totalMembers}`;
 
     // Create a new room
     const newRoom = new Room({
@@ -477,8 +478,8 @@ app.post("/create-room", async (req, res) => {
       roomID,
       roomType,
       roomName,
-      members,
-      roles: [`${uid}:admin`], // Assigning the role of "admin" to the user who creates the room
+      membercount,
+      // roles: [`${uid}`], // Assigning the role of "admin" to the user who creates the room
     });
 
     await newRoom.save();
@@ -504,58 +505,121 @@ app.post("/join-room", authenticateToken, async (req, res) => {
     const uid = req.user.userId;
     console.log(roomID);
     console.log(uid);
+
     const existingRoom = await Room.findOne({ roomID });
-    
     if (!existingRoom) {
       return res.status(400).json({ message: "Room ID not found" });
     }
-  
 
-    let [currentMembers, totalMembers] =  existingRoom .members[0].split("/").map(Number);
-    if ( existingRoom.members.includes(uid)) {
-      return res.status(400).json({ message: "User is already a member of the room" });
+    // Check if the user is the admin of the room
+    if (existingRoom.uid === uid) {
+      return res
+        .status(400)
+        .json({ message: "You are already the admin of the room" });
     }
+
+    // Check if the user is already a member of the room
+    if (existingRoom.members.includes(uid)) {
+      return res
+        .status(400)
+        .json({ message: "User is already a member of the room" });
+    }
+
+    let [currentMembers, totalMembers] = existingRoom.membercount
+      .split("/")
+      .map(Number);
     currentMembers += 1;
-   existingRoom.members[0] = `${currentMembers}/${totalMembers}`;
-  
-    existingRoom.roles.push(`${uid}:member`);
- 
+    existingRoom.membercount = `${currentMembers}/${totalMembers}`;
+    existingRoom.members.push(uid);
 
     await existingRoom.save();
 
     await User.updateOne(
-      { uid },
+      { uniqueId: uid },
       {
-        $addToSet: { rooms: roomID }
+        $addToSet: { rooms: roomID },
       }
     );
 
-
-   
-    res.json({ message: "Joined room successfully", existingRoom }); // Send the room object along with the message
+    res.json({ message: "Joined room successfully", existingRoom });
   } catch (error) {
     console.error("Error joining room:", error);
     res.status(500).json({ message: "Failed to join room" });
   }
 });
 
-
 // Fetch Recent Rooms Endpoint
-app.get("/recent-rooms", authenticateToken, async (req, res) => {
-// const limit = parseInt(req.query.limit, 10) || 2; // Default limit is 5
-    try {
+app.get("/admin-rooms", authenticateToken, async (req, res) => {
+  try {
     const user = await User.findOne({ uniqueId: req.user.userId });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
+
     // Fetch rooms created by the user
-    const recentRooms = await Room.find({ uid: user.uniqueId }).sort({ createdAt: -1 });
+    let recentRooms = await Room.find({ uid: user.uniqueId }).sort({
+      createdAt: -1,
+    });
+
+    // Adding message and role to each room item
+    recentRooms = recentRooms.map(room => ({
+      ...room.toObject(), // Convert Mongoose document to plain JavaScript object
+      role: "Admin",
+      navigate: "adminroom",
+    }));
+
     res.json(recentRooms);
   } catch (error) {
     console.error("Error fetching recent rooms:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
+
+
+// Fetch Recent Rooms Endpoint
+app.get("/member-rooms", authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findOne({ uniqueId: req.user.userId });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Fetch rooms where the user is in the roles array
+    let recentRooms = await Room.find({
+      members: user.uniqueId,
+    }).sort({ createdAt: -1 });
+
+    // Adding message and role to each room item
+    recentRooms = recentRooms.map(room => ({
+      ...room.toObject(), // Convert Mongoose document to plain JavaScript object
+      role: "Member",
+      navigate: "RoomUser",
+    }));
+
+    console.log(recentRooms);
+
+    // Sending the modified recentRooms data
+    res.json(recentRooms);
+  } catch (error) {
+    console.error("Error fetching recent rooms:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+// app.get("/recent-rooms/:uid", async (req, res) => {
+//   try {
+//     const { uid } = req.params;
+
+//     // Find recent rooms belonging to the user with the provided UID
+//     const recentRooms = await Room.find({ uid }).sort({ createdAt: -1 }).limit(1);
+
+//     res.json(recentRooms);
+//   } catch (error) {
+//     console.error("Error fetching recent rooms:", error);
+//     res.status(500).json({ message: "Failed to fetch recent rooms" });
+//   }
+// });
 
 app.listen(process.env.PORT, () => {
   console.log(`Server is running on port ${process.env.PORT}`);
