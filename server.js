@@ -452,26 +452,21 @@ const roomSchema = new mongoose.Schema({
   membercount: { type: String, required: true }, // Members as an array of strings
   members: { type: [String], required: true }, // Roles as an array of strings
 });
-
 const Room = mongoose.model("Room", roomSchema);
-
-
+// Create Room Endpoint
 // Create Room Endpoint
 // Route to create a room
 app.post("/create-room", async (req, res) => {
   const { roomID, roomName, roomType, uid, roles } = req.body;
-
   try {
     // Check if the roomID already exists
     const existingRoom = await Room.findOne({ roomID });
     if (existingRoom) {
       return res.status(400).json({ message: "Room ID already exists" });
     }
-
     // Extract the total number of members from roomType and format members as "1/totalMembers"
     const totalMembers = parseInt(roomType.split("_")[0]);
     const membercount = `${1}/${totalMembers}`;
-
     // Create a new room
     const newRoom = new Room({
       uid,
@@ -481,43 +476,35 @@ app.post("/create-room", async (req, res) => {
       membercount,
       // roles: [`${uid}`], // Assigning the role of "admin" to the user who creates the room
     });
-
     await newRoom.save();
-
     res.json({ message: "Room created successfully", room: newRoom });
   } catch (error) {
     console.error("Error creating room:", error);
     res.status(500).json({ message: "Failed to create room" });
   }
 });
-
 const joinedUserSchema = new mongoose.Schema({
   uid: String,
   rid: mongoose.Schema.Types.ObjectId, // Assuming rid is the ObjectId of the room
   joinedAt: { type: Date, default: Date.now },
 });
-
 const JoinedUser = mongoose.model("JoinedUser", joinedUserSchema);
-
 app.post("/join-room", authenticateToken, async (req, res) => {
   try {
     const { roomID } = req.body;
     const uid = req.user.userId;
     console.log(roomID);
     console.log(uid);
-
     const existingRoom = await Room.findOne({ roomID });
     if (!existingRoom) {
       return res.status(400).json({ message: "Room ID not found" });
     }
-
     // Check if the user is the admin of the room
     if (existingRoom.uid === uid) {
       return res
         .status(400)
         .json({ message: "You are already the admin of the room" });
     }
-
     // Check if the user is already a member of the room
     if (existingRoom.members.includes(uid)) {
       return res
@@ -531,23 +518,19 @@ app.post("/join-room", authenticateToken, async (req, res) => {
     currentMembers += 1;
     existingRoom.membercount = `${currentMembers}/${totalMembers}`;
     existingRoom.members.push(uid);
-
     await existingRoom.save();
-
     await User.updateOne(
       { uniqueId: uid },
       {
         $addToSet: { rooms: roomID },
-      }
+      }                                                                                           
     );
-
     res.json({ message: "Joined room successfully", existingRoom });
   } catch (error) {
     console.error("Error joining room:", error);
     res.status(500).json({ message: "Failed to join room" });
   }
 });
-
 // Fetch Recent Rooms Endpoint
 app.get("/admin-rooms", authenticateToken, async (req, res) => {
   try {
@@ -555,27 +538,22 @@ app.get("/admin-rooms", authenticateToken, async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-
     // Fetch rooms created by the user
     let recentRooms = await Room.find({ uid: user.uniqueId }).sort({
       createdAt: -1,
     });
-
     // Adding message and role to each room item
     recentRooms = recentRooms.map(room => ({
       ...room.toObject(), // Convert Mongoose document to plain JavaScript object
       role: "Admin",
       navigate: "adminroom",
     }));
-
     res.json(recentRooms);
   } catch (error) {
     console.error("Error fetching recent rooms:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
-
-
 // Fetch Recent Rooms Endpoint
 app.get("/member-rooms", authenticateToken, async (req, res) => {
   try {
@@ -583,21 +561,17 @@ app.get("/member-rooms", authenticateToken, async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-
     // Fetch rooms where the user is in the roles array
     let recentRooms = await Room.find({
       members: user.uniqueId,
     }).sort({ createdAt: -1 });
-
     // Adding message and role to each room item
     recentRooms = recentRooms.map(room => ({
       ...room.toObject(), // Convert Mongoose document to plain JavaScript object
       role: "Member",
       navigate: "RoomUser",
     }));
-
     console.log(recentRooms);
-
     // Sending the modified recentRooms data
     res.json(recentRooms);
   } catch (error) {
@@ -605,21 +579,114 @@ app.get("/member-rooms", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
-
 // app.get("/recent-rooms/:uid", async (req, res) => {
 //   try {
 //     const { uid } = req.params;
-
 //     // Find recent rooms belonging to the user with the provided UID
 //     const recentRooms = await Room.find({ uid }).sort({ createdAt: -1 }).limit(1);
-
 //     res.json(recentRooms);
 //   } catch (error) {
 //     console.error("Error fetching recent rooms:", error);
 //     res.status(500).json({ message: "Failed to fetch recent rooms" });
 //   }
 // });
+
+
+const bankDetailsSchema = new mongoose.Schema({
+  type: String,
+  upiId: String,
+  accountNumber: String,
+  bankName: String,
+  ifscCode: String,
+  creditCardNumber: String,
+  cardHolderName: String,
+  expiryDate: String,
+  cvv: String,
+});
+
+// Create BankDetails model
+const BankDetails = mongoose.model("BankDetails", bankDetailsSchema);
+
+const validDetails = {
+  upiIds: ['codersbizzare@okaxis'], // List of valid UPI IDs
+  validAccount: {
+    accountNumber: 'valid_account_number',
+    bankName: 'valid_bank_name',
+    ifscCode: 'valid_ifsc_code'
+  },
+  validCreditCard: {
+    cardNumber: 'valid_card_number',
+    cardHolderName: 'valid_card_holder_name',
+    expiryDate: 'valid_expiry_date',
+    cvv: 'valid_cvv'
+  }
+};
+
+app.post('/api/verify/upi', (req, res) => {
+  const { upiId } = req.body;
+  // Simulate UPI ID verification
+  if (validDetails.upiIds.includes(upiId)) {
+    res.status(200).json({ message: 'UPI ID verified successfully' });
+  } else {
+    res.status(400).json({ error: 'Invalid UPI ID' });
+  }
+});
+
+app.post('/api/verify/account', (req, res) => {
+  const { accountNumber, bankName, ifscCode } = req.body;
+  // Simulate account details verification
+  if (
+    accountNumber === validDetails.validAccount.accountNumber &&
+    bankName === validDetails.validAccount.bankName &&
+    ifscCode === validDetails.validAccount.ifscCode
+  ) {
+    res.status(200).json({ message: 'Account details verified successfully' });
+  } else {
+    res.status(400).json({ error: 'Invalid account details' });
+  }
+});
+
+app.post('/api/verify/creditcard', (req, res) => {
+  const { cardNumber, cardHolderName, expiryDate, cvv } = req.body;
+  // Simulate credit card details verification
+  if (
+    cardNumber === validDetails.validCreditCard.cardNumber &&
+    cardHolderName === validDetails.validCreditCard.cardHolderName &&
+    expiryDate === validDetails.validCreditCard.expiryDate &&
+    cvv === validDetails.validCreditCard.cvv
+  ) {
+    res.status(200).json({ message: 'Credit card details verified successfully' });
+  } else {
+    res.status(400).json({ error: 'Invalid credit card details' });
+  }
+});
+
+app.post('/api/saveBankDetails', (req, res) => {
+  const {
+    type, upiId, accountNumber, bankName, ifscCode,
+    cardNumber, cardHolderName, expiryDate, cvv
+  } = req.body;
+
+  // Simulate saving bank details to the database
+  const savedDetails = {
+    type,
+    upiId,
+    accountNumber,
+    bankName,
+    ifscCode,
+    cardNumber,
+    cardHolderName,
+    expiryDate,
+    cvv,
+  };
+
+  // Here you can save the details to the database or perform other operations as required
+
+  res.status(200).json({ message: 'Bank details saved successfully' });
+});
+
+  // Here you can save the details to your database
+
 
 app.listen(process.env.PORT, () => {
   console.log(`Server is running on port ${process.env.PORT}`);
