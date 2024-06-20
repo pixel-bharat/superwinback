@@ -1,3 +1,8 @@
+
+// API CONTROOLERS MODELS ARE LISTED HERE IN THIS FOLODER
+
+
+
 const express = require("express");
 const mongoose = require("mongoose");
 const bodyParser = require("body-parser");
@@ -7,15 +12,20 @@ const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
 const validator = require("validator");
 
+const http = require("http");
+
 require("dotenv").config();
 const cors = require("cors");
 
 const app = express();
+const server = http.createServer(app);
+
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(cors());
+   
 
-// MongoDB connection
+
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => console.log("Connected to MongoDB"))
@@ -23,17 +33,11 @@ mongoose
     console.error("MongoDB connection error:", err);
     process.exit(1);
   });
-
+                 
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
-
-// Debug logs to check Twilio credentials (Remove these in production)
-console.log("Twilio Account SID:", accountSid);
-console.log("Twilio Auth Token:", authToken);
-
 const client = twilio(accountSid, authToken);
 
-// Define User schema and model
 const userSchema = new mongoose.Schema({
   phoneNumber: { type: String, required: true, unique: true },
   name: String,
@@ -42,6 +46,8 @@ const userSchema = new mongoose.Schema({
   isAvatarSet: { type: Boolean, default: false },
   uniqueId: String,
   walletBalance: { type: Number, default: 0 },
+  isActive: { type: Boolean, default: false },
+
 });
 const User = mongoose.model("User", userSchema);
 
@@ -49,7 +55,7 @@ const generateUniqueId = () => {
   return "uuidv4" + Math.floor(Math.random() * 100000);
 };
 
-const userSessions = {}; // Global or appropriate scoped session storage
+const userSessions = {};
 
 app.post("/send-otp", async (req, res) => {
   const { phoneNumber } = req.body;
@@ -81,7 +87,6 @@ app.post("/send-otp", async (req, res) => {
       );
     }
 
-    // Store OTP, phone number, and unique ID in local session using cleanedPhoneNumber as the key
     userSessions[cleanedPhoneNumber] = {
       otp,
       phoneNumber: cleanedPhoneNumber,
@@ -141,24 +146,26 @@ app.post("/verify-otp", async (req, res) => {
       user = new User({
         phoneNumber: cleanedPhoneNumber,
         uniqueId: sessionData.uid,
+        isActive: true,
       });
       await user.save();
       console.log(
         `New user registered. Phone number: ${cleanedPhoneNumber}, UID: ${sessionData.uid}`
       );
     } else {
+      await User.updateOne(
+        { phoneNumber: cleanedPhoneNumber },
+        { isActive: true }
+      );
       console.log(
         `Existing user verified. Phone number: ${user.phoneNumber}, UID: ${user.uniqueId}`
       );
     }
 
-    // OTP verification successful, cleanup session data
     delete userSessions[cleanedPhoneNumber];
 
-    // Check if profile setup is required
     const profileSetupRequired = !(user.isNameSet && user.isAvatarSet);
 
-    // Generate JWT token
     const token = jwt.sign(
       {
         userId: user.uniqueId,
@@ -193,7 +200,31 @@ app.post("/verify-otp", async (req, res) => {
   }
 });
 
-// POST endpoint to update user profile avatar and name
+app.post("/logout", async (req, res) => {
+  const { phoneNumber } = req.body;
+  if (!phoneNumber) {
+    return res.status(400).send("Phone number is required");
+  }
+
+  const cleanedPhoneNumber = phoneNumber.replace(/\D/g, "");
+  console.log(`Logging out user with phone number: ${cleanedPhoneNumber}`);
+
+  try {
+    await User.updateOne(
+      { phoneNumber: cleanedPhoneNumber },
+      { isActive: false }
+    );
+    console.log(`User with phone number ${cleanedPhoneNumber} logged out`);
+    res.status(200).send("Logged out successfully");
+  } catch (error) {
+    console.error(
+      `Error logging out user with phone number ${cleanedPhoneNumber}: `,
+      error
+    );
+    res.status(500).send("Error logging out");
+  }
+});
+
 function validateAvatar(avatar) {
   const allowedAvatars = [
     "avatar_1",
@@ -267,25 +298,17 @@ app.post("/avatar", async (req, res) => {
     await user.save();
 
     res.status(200).json({
-      message: "Profile update successful",
-      profile: {
-        phoneNumber: user.phoneNumber,
-        name: user.name,
-        avatar: user.avatar,
-        uid: user.uniqueId,
-        profileSetupRequired,
-      },
+      message: "Profile updated successfully",
+      uid: user.uniqueId,
       token,
+      profileSetupRequired,
     });
   } catch (error) {
     console.error("Error updating profile:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ message: "Error updating profile" });
   }
 });
 
-//
-//
-//Token Verification Middleware  here
 const authenticateToken = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) {
@@ -309,7 +332,7 @@ const Schema = mongoose.Schema;
 
 const transactionSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User" },
-  uniqueId: { type: String, required: true }, // Assuming uniqueId is a string identifier for users
+  uniqueId: { type: String, required: true },
   amount: { type: Number, required: true },
   transactionDate: { type: Date, default: Date.now },
   transactionType: { type: String, enum: ["credit", "debit"], required: true },
@@ -317,9 +340,6 @@ const transactionSchema = new Schema({
 });
 
 const Transaction = mongoose.model("Transaction", transactionSchema);
-
-//
-//// Middleware to verify token
 
 app.post("/api/add_money", authenticateToken, async (req, res) => {
   const { amount } = req.body;
@@ -359,9 +379,6 @@ app.post("/api/add_money", authenticateToken, async (req, res) => {
   }
 });
 
-//
-//
-//Spend money API here
 app.post("/api/spend", authenticateToken, async (req, res) => {
   const { amount } = req.body;
   console.log("Spend money request:", amount);
@@ -399,10 +416,6 @@ app.post("/api/spend", authenticateToken, async (req, res) => {
   }
 });
 
-//
-//
-//Transaction History Endpoint
-
 app.get("/api/transactions", authenticateToken, async (req, res) => {
   try {
     console.log("Fetching transactions for user:", req.user.userId);
@@ -417,13 +430,12 @@ app.get("/api/transactions", authenticateToken, async (req, res) => {
   }
 });
 
-// User Data Endpoint
 app.get("/api/userdata", authenticateToken, async (req, res) => {
   try {
     console.log("Fetching data for user:", req.user.userId);
     const user = await User.findOne({ uniqueId: req.user.userId }).select(
       "-password"
-    ); // Exclude password from the response
+    );
     if (!user) {
       console.log("User not found:", req.user.userId);
       return res.status(404).json({ message: "User not found" });
@@ -433,7 +445,7 @@ app.get("/api/userdata", authenticateToken, async (req, res) => {
       phone: user.phoneNumber,
       name: user.name,
       avatar: user.avatar,
-      uid: user.uniqueId, // Ensure consistency in naming, might be 'uid' or 'uniqueId'
+      uid: user.uniqueId,
       walletBalance: user.walletBalance,
     });
   } catch (error) {
@@ -441,40 +453,35 @@ app.get("/api/userdata", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-// User Data Endpoint
 
 const roomSchema = new mongoose.Schema({
   roomID: { type: String, required: true, unique: true },
-  uid: { type: String, required: true},
+  uid: { type: String, required: true },
   roomType: { type: String, required: true },
   roomName: { type: String, required: true },
   createdAt: { type: Date, default: Date.now },
-  membercount: { type: String, required: true }, // Members as an array of strings
-  members: { type: [String], required: true }, // Roles as an array of strings
+  membercount: { type: String, required: true },
+  members: { type: [String], required: true },
 });
 const Room = mongoose.model("Room", roomSchema);
-// Create Room Endpoint
-// Create Room Endpoint
-// Route to create a room
+
 app.post("/create-room", async (req, res) => {
   const { roomID, roomName, roomType, uid, roles } = req.body;
   try {
-    // Check if the roomID already exists
     const existingRoom = await Room.findOne({ roomID });
     if (existingRoom) {
       return res.status(400).json({ message: "Room ID already exists" });
     }
-    // Extract the total number of members from roomType and format members as "1/totalMembers"
+
     const totalMembers = parseInt(roomType.split("_")[0]);
     const membercount = `${1}/${totalMembers}`;
-    // Create a new room
+
     const newRoom = new Room({
       uid,
       roomID,
       roomType,
       roomName,
       membercount,
-      // roles: [`${uid}`], // Assigning the role of "admin" to the user who creates the room
     });
     await newRoom.save();
     res.json({ message: "Room created successfully", room: newRoom });
@@ -485,7 +492,7 @@ app.post("/create-room", async (req, res) => {
 });
 const joinedUserSchema = new mongoose.Schema({
   uid: String,
-  rid: mongoose.Schema.Types.ObjectId, // Assuming rid is the ObjectId of the room
+  rid: mongoose.Schema.Types.ObjectId,
   joinedAt: { type: Date, default: Date.now },
 });
 const JoinedUser = mongoose.model("JoinedUser", joinedUserSchema);
@@ -499,19 +506,18 @@ app.post("/join-room", authenticateToken, async (req, res) => {
     if (!existingRoom) {
       return res.status(400).json({ message: "Room ID not found" });
     }
-    // Check if the user is the admin of the room
+
     if (existingRoom.uid === uid) {
       return res
         .status(400)
         .json({ message: "You are already the admin of the room" });
     }
-    // Check if the user is already a member of the room
+
     if (existingRoom.members.includes(uid)) {
       return res
         .status(400)
         .json({ message: "User is already a member of the room" });
     }
-
     let [currentMembers, totalMembers] = existingRoom.membercount
       .split("/")
       .map(Number);
@@ -523,7 +529,7 @@ app.post("/join-room", authenticateToken, async (req, res) => {
       { uniqueId: uid },
       {
         $addToSet: { rooms: roomID },
-      }                                                                                           
+      }
     );
     res.json({ message: "Joined room successfully", existingRoom });
   } catch (error) {
@@ -531,20 +537,20 @@ app.post("/join-room", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Failed to join room" });
   }
 });
-// Fetch Recent Rooms Endpoint
+
 app.get("/admin-rooms", authenticateToken, async (req, res) => {
   try {
     const user = await User.findOne({ uniqueId: req.user.userId });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    // Fetch rooms created by the user
+
     let recentRooms = await Room.find({ uid: user.uniqueId }).sort({
       createdAt: -1,
     });
-    // Adding message and role to each room item
-    recentRooms = recentRooms.map(room => ({
-      ...room.toObject(), // Convert Mongoose document to plain JavaScript object
+
+    recentRooms = recentRooms.map((room) => ({
+      ...room.toObject(),
       role: "Admin",
       navigate: "adminroom",
     }));
@@ -554,121 +560,81 @@ app.get("/admin-rooms", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-// Fetch Recent Rooms Endpoint
+
 app.get("/member-rooms", authenticateToken, async (req, res) => {
   try {
     const user = await User.findOne({ uniqueId: req.user.userId });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    // Fetch rooms where the user is in the roles array
+
     let recentRooms = await Room.find({
       members: user.uniqueId,
     }).sort({ createdAt: -1 });
-    // Adding message and role to each room item
-    recentRooms = recentRooms.map(room => ({
-      ...room.toObject(), // Convert Mongoose document to plain JavaScript object
+
+    recentRooms = recentRooms.map((room) => ({
+      ...room.toObject(),
       role: "Member",
       navigate: "RoomUser",
     }));
     console.log(recentRooms);
-    // Sending the modified recentRooms data
+
     res.json(recentRooms);
   } catch (error) {
     console.error("Error fetching recent rooms:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
-// app.get("/recent-rooms/:uid", async (req, res) => {
-//   try {
-//     const { uid } = req.params;
-//     // Find recent rooms belonging to the user with the provided UID
-//     const recentRooms = await Room.find({ uid }).sort({ createdAt: -1 }).limit(1);
-//     res.json(recentRooms);
-//   } catch (error) {
-//     console.error("Error fetching recent rooms:", error);
-//     res.status(500).json({ message: "Failed to fetch recent rooms" });
-//   }
-// });
 
-
-const bankDetailsSchema = new mongoose.Schema({
-  type: String,
+const BankDetailsSchema = new mongoose.Schema({
+  type: { type: String, required: true },
   upiId: String,
   accountNumber: String,
   bankName: String,
   ifscCode: String,
-  creditCardNumber: String,
+  cardNumber: String,
   cardHolderName: String,
   expiryDate: String,
   cvv: String,
+  uid: { type: String, required: true },
 });
 
-// Create BankDetails model
-const BankDetails = mongoose.model("BankDetails", bankDetailsSchema);
-
-const validDetails = {
-  upiIds: ['codersbizzare@okaxis'], // List of valid UPI IDs
-  validAccount: {
-    accountNumber: 'valid_account_number',
-    bankName: 'valid_bank_name',
-    ifscCode: 'valid_ifsc_code'
-  },
-  validCreditCard: {
-    cardNumber: 'valid_card_number',
-    cardHolderName: 'valid_card_holder_name',
-    expiryDate: 'valid_expiry_date',
-    cvv: 'valid_cvv'
-  }
-};
-
-app.post('/api/verify/upi', (req, res) => {
+const BankDetails = mongoose.model('BankDetails', BankDetailsSchema);
+// Routes
+app.post('/api/verify/upi', async (req, res) => {
   const { upiId } = req.body;
-  // Simulate UPI ID verification
-  if (validDetails.upiIds.includes(upiId)) {
-    res.status(200).json({ message: 'UPI ID verified successfully' });
+  const isVerified = true; // Simulate verification logic (replace with actual verification logic)
+  if (isVerified) {
+    res.json({ message: 'UPI ID verified successfully' });
   } else {
-    res.status(400).json({ error: 'Invalid UPI ID' });
+    res.status(400).json({ error: 'UPI ID verification failed' });
   }
 });
 
-app.post('/api/verify/account', (req, res) => {
+app.post('/api/verify/account', async (req, res) => {
   const { accountNumber, bankName, ifscCode } = req.body;
-  // Simulate account details verification
-  if (
-    accountNumber === validDetails.validAccount.accountNumber &&
-    bankName === validDetails.validAccount.bankName &&
-    ifscCode === validDetails.validAccount.ifscCode
-  ) {
-    res.status(200).json({ message: 'Account details verified successfully' });
+  const isVerified = true; // Simulate verification logic (replace with actual verification logic)
+  if (isVerified) {
+    res.json({ message: 'Account details verified successfully' });
   } else {
-    res.status(400).json({ error: 'Invalid account details' });
+    res.status(400).json({ error: 'Account details verification failed' });
   }
 });
 
-app.post('/api/verify/creditcard', (req, res) => {
+app.post('/api/verify/creditcard', async (req, res) => {
   const { cardNumber, cardHolderName, expiryDate, cvv } = req.body;
-  // Simulate credit card details verification
-  if (
-    cardNumber === validDetails.validCreditCard.cardNumber &&
-    cardHolderName === validDetails.validCreditCard.cardHolderName &&
-    expiryDate === validDetails.validCreditCard.expiryDate &&
-    cvv === validDetails.validCreditCard.cvv
-  ) {
-    res.status(200).json({ message: 'Credit card details verified successfully' });
+  const isVerified = true; // Simulate verification logic (replace with actual verification logic)
+  if (isVerified) {
+    res.json({ message: 'Credit card details verified successfully' });
   } else {
-    res.status(400).json({ error: 'Invalid credit card details' });
+    res.status(400).json({ error: 'Credit card details verification failed' });
   }
 });
 
-app.post('/api/saveBankDetails', (req, res) => {
-  const {
-    type, upiId, accountNumber, bankName, ifscCode,
-    cardNumber, cardHolderName, expiryDate, cvv
-  } = req.body;
+app.post('/api/saveBankDetails', async (req, res) => {
+  const { uid, type, upiId, accountNumber, bankName, ifscCode, cardNumber, cardHolderName, expiryDate, cvv } = req.body;
 
-  // Simulate saving bank details to the database
-  const savedDetails = {
+  const bankDetails = new BankDetails({
     type,
     upiId,
     accountNumber,
@@ -678,15 +644,36 @@ app.post('/api/saveBankDetails', (req, res) => {
     cardHolderName,
     expiryDate,
     cvv,
-  };
+    uid,
+  });
 
-  // Here you can save the details to the database or perform other operations as required
-
-  res.status(200).json({ message: 'Bank details saved successfully' });
+  try {
+    const savedBankDetails = await bankDetails.save();
+    res.json({ message: 'Bank details saved successfully', data: savedBankDetails });
+  } catch (err) {
+    console.error('Failed to save bank details:', err);
+    res.status(500).json({ error: 'Failed to save bank details' });
+  }
 });
 
-  // Here you can save the details to your database
+app.get('/api/user-bank-details/:uid', async (req, res) => {
+  const uid = req.params.uid;
 
+  try {
+    console.log(`fetching bank details for uid: ${uid}`);
+    
+    const userBankDetails = await BankDetails.find({ uid });
+
+    if (userBankDetails.length === 0) {
+      return res.status(404).json({ error: 'Bank details not found for this user' });
+    }
+
+    res.json(userBankDetails);
+  } catch (err) {
+    console.error('Error fetching bank details:', err);
+    res.status(500).json({ error: 'Failed to fetch bank details' });
+  }
+});
 
 app.listen(process.env.PORT, () => {
   console.log(`Server is running on port ${process.env.PORT}`);
