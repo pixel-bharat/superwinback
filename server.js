@@ -586,17 +586,17 @@ app.get("/member-rooms", authenticateToken, async (req, res) => {
   }
 });
 
-const BankDetailsSchema = new mongoose.Schema({
-  type: { type: String, required: true },
-  upiId: String,
-  accountNumber: String,
-  bankName: String,
-  ifscCode: String,
-  cardNumber: String,
-  cardHolderName: String,
-  expiryDate: String,
-  cvv: String,
+const BankDetailsSchema = new Schema({
   uid: { type: String, required: true },
+  type: { type: String, required: true },
+  upiId: { type: String },
+  accountNumber: { type: String },
+  bankName: { type: String },
+  ifscCode: { type: String },
+  cardNumber: { type: String },
+  cardHolderName: { type: String },
+  expiryDate: { type: String },
+  cvv: { type: String }
 });
 
 const BankDetails = mongoose.model('BankDetails', BankDetailsSchema);
@@ -634,20 +634,28 @@ app.post('/api/verify/creditcard', async (req, res) => {
 app.post('/api/saveBankDetails', async (req, res) => {
   const { uid, type, upiId, accountNumber, bankName, ifscCode, cardNumber, cardHolderName, expiryDate, cvv } = req.body;
 
-  const bankDetails = new BankDetails({
-    type,
-    upiId,
-    accountNumber,
-    bankName,
-    ifscCode,
-    cardNumber,
-    cardHolderName,
-    expiryDate,
-    cvv,
-    uid,
-  });
-
   try {
+    let bankDetails = await BankDetails.findOne({ uid });
+
+    if (!bankDetails) {
+      bankDetails = new BankDetails({ uid, type }); // Include type here
+    } else {
+      bankDetails.type = type; // Update type if bank details exist
+    }
+
+    if (type === 'UPI') {
+      bankDetails.upiId = upiId;
+    } else if (type === 'account') {
+      bankDetails.accountNumber = accountNumber;
+      bankDetails.bankName = bankName;
+      bankDetails.ifscCode = ifscCode;
+    } else if (type === 'credit card' || type === 'debit card') {
+      bankDetails.cardNumber = cardNumber;
+      bankDetails.cardHolderName = cardHolderName;
+      bankDetails.expiryDate = expiryDate;
+      bankDetails.cvv = cvv;
+    }
+
     const savedBankDetails = await bankDetails.save();
     res.json({ message: 'Bank details saved successfully', data: savedBankDetails });
   } catch (err) {
@@ -656,24 +664,26 @@ app.post('/api/saveBankDetails', async (req, res) => {
   }
 });
 
-app.get('/api/user-bank-details/:uid', async (req, res) => {
-  const uid = req.params.uid;
 
-  try {
-    console.log(`fetching bank details for uid: ${uid}`);
-    
-    const userBankDetails = await BankDetails.find({ uid });
 
-    if (userBankDetails.length === 0) {
-      return res.status(404).json({ error: 'Bank details not found for this user' });
+  app.get('/api/user-bank-details/:uid', async (req, res) => {
+    const uid = req.params.uid;
+
+    try {
+      console.log(`fetching bank details for uid: ${uid}`);
+      
+      const userBankDetails = await BankDetails.find({ uid });
+        console.log(userBankDetails);
+      if (userBankDetails.length === 0) {
+        return res.status(404).json({ error: 'Bank details not found for this user' });
+      }
+
+      res.json(userBankDetails);
+    } catch (err) {
+      console.error('Error fetching bank details:', err);
+      res.status(500).json({ error: 'Failed to fetch bank details' });
     }
-
-    res.json(userBankDetails);
-  } catch (err) {
-    console.error('Error fetching bank details:', err);
-    res.status(500).json({ error: 'Failed to fetch bank details' });
-  }
-});
+  });
 
 app.listen(process.env.PORT, () => {
   console.log(`Server is running on port ${process.env.PORT}`);
